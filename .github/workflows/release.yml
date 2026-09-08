@@ -13,19 +13,19 @@ concurrency:
 
 jobs:
   source:
-    name: Resolve latest release
+    name: Resolve release
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
       release_tag: ${{ steps.release.outputs.release_tag }}
 
     steps:
-      - name: Resolve latest PyTorch release
+      - name: Resolve PyTorch release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=$(gh api repos/pytorch/pytorch/releases/latest --jq .tag_name)
+          tag=v2.13.0
           existing_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
           release_tag=$tag
           suffix=1
@@ -192,9 +192,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r upstream/pytorch/requirements-build.txt
           if [[ "$RUNNER_OS" == Windows && "$BACKEND" == cpu ]]; then
-            python -m pip install intel-openmp==2024.2.0
+            python -m pip install mkl-static==2024.2.0 mkl-include==2024.2.0 intel-openmp==2024.2.0
             python_root=$(cygpath -m "$(python -c 'import sys; print(sys.prefix)')")
             printf 'INTEL_OPENMP_ROOT=%s\n' "$python_root/Library" >> "$GITHUB_ENV"
+            printf 'CMAKE_PREFIX_PATH=%s\n' "$python_root/Library" >> "$GITHUB_ENV"
+          elif [[ "$RUNNER_OS" == Linux && "$BACKEND" == cpu ]]; then
+            # Keep GCC's GNU OpenMP runtime instead of installing Intel OpenMP.
+            python -m pip install --ignore-installed --no-deps --prefix "$RUNNER_TEMP/mkl" \
+              mkl-static==2024.2.0 mkl-include==2024.2.0
+            printf 'CMAKE_PREFIX_PATH=%s\n' "$RUNNER_TEMP/mkl" >> "$GITHUB_ENV"
           fi
 
       - name: Generate HIP sources
@@ -279,12 +285,16 @@ jobs:
 
           if [[ "$BACKEND" == cpu ]]; then
             backend_args+=(
+              -DBLAS=MKL
               -DUSE_FBGEMM=ON
               -DUSE_MKLDNN=ON
               -DUSE_OPENMP=ON
               -DUSE_PYTORCH_QNNPACK=ON
               -DUSE_XNNPACK=ON
             )
+            if [[ "$RUNNER_OS" == Linux ]]; then
+              backend_args+=(-DUSE_STATIC_MKL=ON)
+            fi
           else
             backend_args+=(
               -DUSE_FBGEMM=OFF
