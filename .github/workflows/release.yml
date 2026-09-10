@@ -104,11 +104,11 @@ jobs:
         with:
           toolset: '14.44'
 
-      - name: Install CUDA 13.0
+      - name: Install CUDA 13.3
         if: matrix.backend == 'cuda'
         uses: Jimver/cuda-toolkit@master
         with:
-          cuda: '13.0.0'
+          cuda: '13.3.1'
           method: network
           log-file-suffix: ${{ matrix.target }}
           sub-packages: >-
@@ -125,7 +125,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install cuDNN 9.20
+      - name: Install cuDNN 9.25.1
         if: matrix.backend == 'cuda'
         shell: bash
         run: |
@@ -137,19 +137,19 @@ jobs:
               fi
               curl --fail --location --retry 2 \
                 --output "$RUNNER_TEMP/cudnn.tar.xz" \
-                "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/$cudnn_platform/cudnn-$cudnn_platform-9.20.0.48_cuda13-archive.tar.xz"
+                "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/$cudnn_platform/cudnn-$cudnn_platform-9.25.1.1_cuda13-archive.tar.xz"
               tar -xJf "$RUNNER_TEMP/cudnn.tar.xz" -C "$RUNNER_TEMP"
               printf 'CUDNN_ROOT=%s\n' \
-                "$RUNNER_TEMP/cudnn-$cudnn_platform-9.20.0.48_cuda13-archive" \
+                "$RUNNER_TEMP/cudnn-$cudnn_platform-9.25.1.1_cuda13-archive" \
                 >> "$GITHUB_ENV"
               ;;
             Windows)
               curl --fail --location --retry 2 \
                 --output "$(cygpath -u "$RUNNER_TEMP")/cudnn.zip" \
-                https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.20.0.48_cuda13-archive.zip
+                https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.25.1.1_cuda13-archive.zip
               7z x -y "-o$RUNNER_TEMP" "$RUNNER_TEMP\\cudnn.zip" > /dev/null
               printf 'CUDNN_ROOT=%s\n' \
-                "$RUNNER_TEMP\\cudnn-windows-x86_64-9.20.0.48_cuda13-archive" \
+                "$RUNNER_TEMP\\cudnn-windows-x86_64-9.25.1.1_cuda13-archive" \
                 >> "$GITHUB_ENV"
               ;;
           esac
