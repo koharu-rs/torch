@@ -1,0 +1,206 @@
+# Builds the koharu-torch shim for every platform and backend against the
+# newest libtorch release of the PyTorch version a tag names, such as
+# 2.15.0+koharu.0.84.0.alpha.1 for the Koharu version it ships with.
+name: Shim
+
+on:
+  push:
+    tags: ['*\+koharu.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Resolve libtorch
+    runs-on: ubuntu-latest
+    outputs:
+      pytorch: ${{ steps.release.outputs.pytorch }}
+      libtorch: ${{ steps.release.outputs.libtorch }}
+
+    steps:
+      - name: Find the libtorch release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! $TAG =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+koharu\.[0-9A-Za-z.-]+$ ]]; then
+            echo "::error::$TAG isn't <PyTorch version>+koharu.<Koharu version>"
+            exit 1
+          fi
+          version=${BASH_REMATCH[1]}
+          build=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
+              --json tagName --jq '.[].tagName' \
+            | grep -E "^${version//./\\.}\+libtorch\.[0-9]+$" \
+            | sed 's/.*+libtorch\.//' | sort -n | tail -1 || true)
+          if [[ -z $build ]]; then
+            echo "::error::no libtorch release for PyTorch $version"
+            exit 1
+          fi
+          printf 'pytorch=v%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'libtorch=%s+libtorch.%s\n' "$version" "$build" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: source
+    name: ${{ matrix.backend }} / ${{ matrix.target }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - backend: cpu
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - backend: cpu
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - backend: cuda
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - backend: cuda
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - backend: cuda
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - backend: hip
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - backend: hip
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - backend: metal
+            os: macos-latest
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    env:
+      BACKEND: ${{ matrix.backend }}
+      LIBTORCH: ${{ needs.source.outputs.libtorch }}
+      TARGET_TRIPLE: ${{ matrix.target }}
+
+    steps:
+      - name: Check out the shim
+        uses: actions/checkout@v7
+
+      # generate.py reads the operators from these alone.
+      - name: Check out PyTorch's operator schema
+        uses: actions/checkout@v7
+        with:
+          repository: pytorch/pytorch
+          ref: ${{ needs.source.outputs.pytorch }}
+          path: upstream/pytorch
+          sparse-checkout: |
+            torchgen
+            aten/src/ATen/native/native_functions.yaml
+            aten/src/ATen/native/tags.yaml
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        shell: bash
+        run: python -m pip install cmake ninja pyyaml typing-extensions
+
+      - name: Enable Visual Studio 2022 toolset
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          toolset: '14.44'
+
+      - name: Download libtorch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$LIBTORCH" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP" \
+            --pattern "$TARGET_TRIPLE-$BACKEND.tar.gz" \
+            --pattern "$TARGET_TRIPLE-$BACKEND-dev.tar.gz"
+          mkdir -p libtorch/lib
+          tar -xzf "$RUNNER_TEMP/$TARGET_TRIPLE-$BACKEND.tar.gz" -C libtorch/lib
+          tar -xzf "$RUNNER_TEMP/$TARGET_TRIPLE-$BACKEND-dev.tar.gz" -C libtorch
+
+      - name: Build the shim
+        shell: bash
+        run: |
+          platform_args=()
+          case "$RUNNER_OS" in
+            Windows) platform_args+=(-DCMAKE_CXX_COMPILER=cl.exe) ;;
+            macOS) platform_args+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
+          esac
+          cmake -S shim -B shim-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/shim-install" \
+            -DLIBTORCH="$PWD/libtorch" \
+            -DPYTORCH_SOURCE="$PWD/upstream/pytorch" \
+            "${platform_args[@]}"
+          cmake --build shim-build --target install
+
+      - name: Package the shim
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) library=koharu-torch.dll ;;
+            Linux) library=libkoharu-torch.so ;;
+            macOS) library=libkoharu-torch.dylib ;;
+          esac
+          tar -C shim-install -czf "$TARGET_TRIPLE-$BACKEND.tar.gz" "$library"
+
+          # The headers are the same for every build; one build publishes
+          # them, with the libtorch C headers they include.
+          if [[ "$RUNNER_OS" == Linux && "$BACKEND" == cpu ]]; then
+            csrc=include/torch/csrc
+            mkdir -p "$csrc/inductor/aoti_torch" "$csrc/stable" include/ATen
+            cp shim-install/include/*.h include/
+            cp libtorch/include/ATen/dlpack.h include/ATen/
+            cp -r libtorch/include/torch/csrc/inductor/aoti_torch/c "$csrc/inductor/aoti_torch/"
+            cp -r libtorch/include/torch/csrc/stable/c "$csrc/stable/"
+            cp libtorch/include/torch/csrc/stable/version.h "$csrc/stable/"
+            cp -r libtorch/include/torch/headeronly include/torch/
+            tar -czf include.tar.gz include
+          fi
+
+      - name: Upload the shim
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}-${{ matrix.backend }}
+          path: |
+            ${{ matrix.target }}-${{ matrix.backend }}.tar.gz
+            include.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  release:
+    needs: [source, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the shim builds
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*'
+          path: release
+          merge-multiple: true
+
+      - name: Publish the shim release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: koharu-torch ${{ github.ref_name }}
+          body: >-
+            The koharu-torch shim, built against libtorch
+            ${{ needs.source.outputs.libtorch }}: one
+            `<target>-<backend>.tar.gz` per libtorch build, and
+            `include.tar.gz` with its headers and the libtorch C headers
+            they include.
+          fail_on_unmatched_files: true
+          files: release/*.tar.gz

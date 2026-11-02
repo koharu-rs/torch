@@ -1,8 +1,11 @@
-name: Torch
+# Builds libtorch for every platform and backend from the PyTorch version a
+# tag names, such as 2.15.0+libtorch.1, whose last number counts builds of
+# that version.
+name: Libtorch
 
 on:
   push:
-    branches: ['main']
+    tags: ['*\+libtorch.*']
 
 permissions:
   contents: read
@@ -13,28 +16,22 @@ concurrency:
 
 jobs:
   source:
-    name: Resolve release
+    name: Resolve PyTorch
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
-      release_tag: ${{ steps.release.outputs.release_tag }}
 
     steps:
-      - name: Resolve PyTorch release
+      - name: Read the tag
         id: release
         env:
-          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          tag=v2.15.0
-          existing_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
-          release_tag=$tag
-          suffix=1
-          while grep -Fxq "$release_tag" <<< "$existing_tags"; do
-            release_tag="$tag.$suffix"
-            ((suffix += 1))
-          done
-          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
-          printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+          if [[ ! $TAG =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+libtorch\.[0-9]+$ ]]; then
+            echo "::error::$TAG isn't <PyTorch version>+libtorch.<build>"
+            exit 1
+          fi
+          printf 'tag=v%s\n' "${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: source
@@ -402,36 +399,6 @@ jobs:
           fi
           cmake --build build --target install --config Release "${parallel_args[@]}"
 
-      - name: Build koharu-torch shim
-        shell: bash
-        run: |
-          compiler_args=()
-          if [[ "$RUNNER_OS" == Windows ]]; then
-            if [[ "$BACKEND" == cuda ]]; then
-              # PyTorch's exported CUDA config forces a Clang C++ compiler to
-              # become NVCC's host compiler, so this consumer must use MSVC.
-              compiler_args+=(
-                -DCMAKE_C_COMPILER=cl.exe
-                -DCMAKE_CXX_COMPILER=cl.exe
-              )
-            else
-              compiler_args+=(
-                -DCMAKE_C_COMPILER=clang-cl.exe
-                -DCMAKE_CXX_COMPILER=clang-cl.exe
-              )
-            fi
-          fi
-
-          cmake -S shim -B shim-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX="$PWD/shim-install" \
-            -DCMAKE_PREFIX_PATH="$PWD/install" \
-            -DPYTORCH_SOURCE="$PWD/upstream/pytorch" \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            "${compiler_args[@]}"
-          cmake --build shim-build --target install --config Release
-
       - name: Package Torch
         shell: bash
         run: |
@@ -463,22 +430,15 @@ jobs:
           if [[ "$BACKEND" == cuda || "$BACKEND" == hip ]]; then
             cp "install/lib/${prefix}caffe2_nvrtc.$extension" package/
           fi
-          cp "shim-install/${prefix}koharu-torch.$extension" package/
           tar -C package -czf "$TARGET_TRIPLE-$BACKEND.tar.gz" .
 
-          # The headers are the same for every build; one build publishes
-          # them, with the libtorch C headers they include.
-          if [[ "$RUNNER_OS" == Linux && "$BACKEND" == cpu ]]; then
-            csrc=include/torch/csrc
-            mkdir -p "$csrc/inductor/aoti_torch" "$csrc/stable" include/ATen
-            cp shim-install/include/*.h include/
-            cp install/include/ATen/dlpack.h include/ATen/
-            cp -r install/include/torch/csrc/inductor/aoti_torch/c "$csrc/inductor/aoti_torch/"
-            cp -r install/include/torch/csrc/stable/c "$csrc/stable/"
-            cp install/include/torch/csrc/stable/version.h "$csrc/stable/"
-            cp -r install/include/torch/headeronly include/torch/
-            tar -czf include.tar.gz include
+          # What the shim builds against beside the libraries: the headers,
+          # and on Windows the import libraries of what it links.
+          development=(include)
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            development+=(lib/c10.lib lib/torch_cpu.lib)
           fi
+          tar -C install -czf "$TARGET_TRIPLE-$BACKEND-dev.tar.gz" "${development[@]}"
 
       - name: Stop sccache
         if: always()
@@ -491,16 +451,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}-${{ matrix.backend }}
-          path: ${{ matrix.target }}-${{ matrix.backend }}.tar.gz
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Upload headers
-        if: runner.os == 'Linux' && matrix.backend == 'cpu'
-        uses: actions/upload-artifact@v7
-        with:
-          name: include
-          path: include.tar.gz
+          path: |
+            ${{ matrix.target }}-${{ matrix.backend }}.tar.gz
+            ${{ matrix.target }}-${{ matrix.backend }}-dev.tar.gz
           if-no-files-found: error
           retention-days: 3
 
@@ -521,9 +474,12 @@ jobs:
       - name: Publish Torch release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.source.outputs.release_tag }}
-          target_commitish: ${{ github.event.repository.default_branch }}
-          name: Torch ${{ needs.source.outputs.release_tag }}
-          body: Koharu runtime dependency.
+          tag_name: ${{ github.ref_name }}
+          name: libtorch ${{ github.ref_name }}
+          body: >-
+            libtorch ${{ needs.source.outputs.tag }} for Koharu: one
+            `<target>-<backend>.tar.gz` of libraries per build, and the
+            `<target>-<backend>-dev.tar.gz` the koharu-torch shim builds
+            against.
           fail_on_unmatched_files: true
           files: release/*.tar.gz
