@@ -25,7 +25,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=v2.13.0
+          tag=v2.15.0
           existing_tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
           release_tag=$tag
           suffix=1
@@ -426,6 +426,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/shim-install" \
             -DCMAKE_PREFIX_PATH="$PWD/install" \
+            -DPYTORCH_SOURCE="$PWD/upstream/pytorch" \
             -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             "${compiler_args[@]}"
@@ -465,6 +466,20 @@ jobs:
           cp "shim-install/${prefix}koharu-torch.$extension" package/
           tar -C package -czf "$TARGET_TRIPLE-$BACKEND.tar.gz" .
 
+          # The headers are the same for every build; one build publishes
+          # them, with the libtorch C headers they include.
+          if [[ "$RUNNER_OS" == Linux && "$BACKEND" == cpu ]]; then
+            csrc=include/torch/csrc
+            mkdir -p "$csrc/inductor/aoti_torch" "$csrc/stable" include/ATen
+            cp shim-install/include/*.h include/
+            cp install/include/ATen/dlpack.h include/ATen/
+            cp -r install/include/torch/csrc/inductor/aoti_torch/c "$csrc/inductor/aoti_torch/"
+            cp -r install/include/torch/csrc/stable/c "$csrc/stable/"
+            cp install/include/torch/csrc/stable/version.h "$csrc/stable/"
+            cp -r install/include/torch/headeronly include/torch/
+            tar -czf include.tar.gz include
+          fi
+
       - name: Stop sccache
         if: always()
         shell: bash
@@ -477,6 +492,15 @@ jobs:
         with:
           name: ${{ matrix.target }}-${{ matrix.backend }}
           path: ${{ matrix.target }}-${{ matrix.backend }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload headers
+        if: runner.os == 'Linux' && matrix.backend == 'cpu'
+        uses: actions/upload-artifact@v7
+        with:
+          name: include
+          path: include.tar.gz
           if-no-files-found: error
           retention-days: 3
 

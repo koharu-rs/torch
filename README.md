@@ -2,6 +2,8 @@
 
 Prebuilt [LibTorch](https://github.com/pytorch/pytorch) shared libraries and the `koharu-torch` shim for [Koharu](https://github.com/mayocream/koharu).
 
+The shim gives every ATen operator a C function, which `shim/generate.py` writes from the PyTorch source each release builds, and `shim/koharu_torch.h` the rest of libtorch's C++ API that libtorch's own C functions lack. Each release's `include.tar.gz` holds the shim's headers and the libtorch C headers they include.
+
 The release workflow resolves the latest stable PyTorch release and builds CPU, CUDA, HIP, and Metal variants for Windows, Linux, and macOS. It runs on pushes to `main`.
 
 Build jobs use the `ubuntu-latest-xl`, `windows-latest-xl`, and `macos-latest-xl` GitHub-hosted larger runners.
