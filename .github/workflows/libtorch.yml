@@ -173,13 +173,13 @@ jobs:
               ;;
           esac
 
-      - name: Install ROCm 10.0
+      - name: Install ROCm 10.1
         if: matrix.backend == 'hip'
         shell: bash
         run: |
           python -m pip install \
             --index-url https://stable.repo.amd.com/rocm/whl-next/ \
-            "rocm[libraries,devel]==10.0.0"
+            "rocm[libraries,devel]==10.1.0"
           rocm-sdk init
 
           rocm_root=$(rocm-sdk path --root)
