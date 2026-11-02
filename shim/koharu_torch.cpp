@@ -46,28 +46,28 @@ void new_strings(
     const std::vector<std::string>& values,
     StringHandle** ret,
     int64_t* len) {
-  *ret = koharu_torch_new_array<StringHandle>(values.size());
+  *ret = aten_new_array<StringHandle>(values.size());
   *len = static_cast<int64_t>(values.size());
   for (size_t i = 0; i < values.size(); ++i) {
     (*ret)[i] = new_string(values[i]);
   }
 }
 
-c10::Stream stream(KoharuTorchStream stream) {
+c10::Stream stream(AtenStream stream) {
   return c10::Stream::unpack3(
       stream.id,
       static_cast<c10::DeviceIndex>(stream.device_index),
       device_type(stream.device_type));
 }
 
-KoharuTorchStream from_stream(const c10::Stream& stream) {
+AtenStream from_stream(const c10::Stream& stream) {
   return {
       stream.id(),
       stream.device_index(),
       static_cast<int32_t>(stream.device_type())};
 }
 
-KoharuTorchMemoryStat stat(const c10::CachingAllocator::StatArray& stats) {
+AtenMemoryStat stat(const c10::CachingAllocator::StatArray& stats) {
   const auto& all =
       stats[static_cast<size_t>(c10::CachingAllocator::StatType::AGGREGATE)];
   return {all.current, all.peak, all.allocated, all.freed};
@@ -77,20 +77,20 @@ at::Generator& generator(AtenGeneratorHandle handle) {
   return *generator_handle_to_generator_pointer(handle);
 }
 
-c10::InferenceMode* inference_mode(KoharuTorchInferenceModeHandle handle) {
+c10::InferenceMode* inference_mode(AtenInferenceModeHandle handle) {
   return reinterpret_cast<c10::InferenceMode*>(handle);
 }
 
-c10::Event* event(KoharuTorchEventHandle handle) {
+c10::Event* event(AtenEventHandle handle) {
   return reinterpret_cast<c10::Event*>(handle);
 }
 
-at::accelerator::Graph* graph(KoharuTorchGraphHandle handle) {
+at::accelerator::Graph* graph(AtenGraphHandle handle) {
   return reinterpret_cast<at::accelerator::Graph*>(handle);
 }
 
 torch::inductor::AOTIModelPackageLoader* package(
-    KoharuTorchAotiPackageHandle handle) {
+    AtenAotiPackageHandle handle) {
   return reinterpret_cast<torch::inductor::AOTIModelPackageLoader*>(handle);
 }
 
@@ -101,7 +101,7 @@ class WarningHandler : public c10::WarningHandler {
     handler(warning.msg().c_str(), context);
   }
 
-  KoharuTorchWarningHandler handler = nullptr;
+  AtenWarningHandler handler = nullptr;
   void* context = nullptr;
 };
 
@@ -109,39 +109,39 @@ thread_local WarningHandler warning_handler;
 
 } // namespace
 
-void koharu_torch_free(void* array) {
+void aten_free(void* array) {
   std::free(array);
 }
 
 // --- Autograd ---------------------------------------------------------------
 
-AOTITorchError koharu_torch_create_inference_mode(
-    KoharuTorchInferenceModeHandle* ret) {
+AOTITorchError aten_create_inference_mode(
+    AtenInferenceModeHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
-    *ret = reinterpret_cast<KoharuTorchInferenceModeHandle>(
+    *ret = reinterpret_cast<AtenInferenceModeHandle>(
         new c10::InferenceMode());
   });
 }
 
-AOTITorchError koharu_torch_delete_inference_mode(
-    KoharuTorchInferenceModeHandle guard) {
+AOTITorchError aten_delete_inference_mode(
+    AtenInferenceModeHandle guard) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { delete inference_mode(guard); });
 }
 
-AOTITorchError koharu_torch_requires_grad(AtenTensorHandle tensor, bool* ret) {
+AOTITorchError aten_requires_grad(AtenTensorHandle tensor, bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = tensor_handle_to_tensor_pointer(tensor)->requires_grad(); });
 }
 
-AOTITorchError koharu_torch_grad(AtenTensorHandle tensor, AtenTensorHandle* ret) {
+AOTITorchError aten_grad(AtenTensorHandle tensor, AtenTensorHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     *ret = new_tensor_handle(
         at::Tensor(tensor_handle_to_tensor_pointer(tensor)->grad()));
   });
 }
 
-AOTITorchError koharu_torch_set_grad(
+AOTITorchError aten_set_grad(
     AtenTensorHandle tensor,
     AtenTensorHandle grad) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -150,7 +150,7 @@ AOTITorchError koharu_torch_set_grad(
   });
 }
 
-AOTITorchError koharu_torch_autograd_grad(
+AOTITorchError aten_autograd_grad(
     const AtenTensorHandle* outputs,
     int64_t outputs_len,
     const AtenTensorHandle* inputs,
@@ -171,17 +171,17 @@ AOTITorchError koharu_torch_autograd_grad(
         retain_graph ? std::make_optional(*retain_graph) : std::nullopt,
         create_graph,
         allow_unused);
-    koharu_torch_tensor_list(std::move(grads), ret, ret_len);
+    aten_tensor_list(std::move(grads), ret, ret_len);
   });
 }
 
 // --- Random numbers ---------------------------------------------------------
 
-AOTITorchError koharu_torch_manual_seed(uint64_t seed) {
+AOTITorchError aten_manual_seed(uint64_t seed) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ at::manual_seed(seed); });
 }
 
-AOTITorchError koharu_torch_create_generator(
+AOTITorchError aten_create_generator(
     int32_t type,
     int32_t index,
     AtenGeneratorHandle* ret) {
@@ -196,7 +196,7 @@ AOTITorchError koharu_torch_create_generator(
   });
 }
 
-AOTITorchError koharu_torch_default_generator(
+AOTITorchError aten_default_generator(
     int32_t type,
     int32_t index,
     AtenGeneratorHandle* ret) {
@@ -207,7 +207,7 @@ AOTITorchError koharu_torch_default_generator(
   });
 }
 
-AOTITorchError koharu_torch_generator_set_seed(
+AOTITorchError aten_generator_set_seed(
     AtenGeneratorHandle handle,
     uint64_t seed) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -217,7 +217,7 @@ AOTITorchError koharu_torch_generator_set_seed(
   });
 }
 
-AOTITorchError koharu_torch_generator_seed(
+AOTITorchError aten_generator_seed(
     AtenGeneratorHandle handle,
     uint64_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -227,7 +227,7 @@ AOTITorchError koharu_torch_generator_seed(
   });
 }
 
-AOTITorchError koharu_torch_generator_set_offset(
+AOTITorchError aten_generator_set_offset(
     AtenGeneratorHandle handle,
     uint64_t offset) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -237,7 +237,7 @@ AOTITorchError koharu_torch_generator_set_offset(
   });
 }
 
-AOTITorchError koharu_torch_generator_offset(
+AOTITorchError aten_generator_offset(
     AtenGeneratorHandle handle,
     uint64_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -247,7 +247,7 @@ AOTITorchError koharu_torch_generator_offset(
   });
 }
 
-AOTITorchError koharu_torch_generator_state(
+AOTITorchError aten_generator_state(
     AtenGeneratorHandle handle,
     AtenTensorHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -257,7 +257,7 @@ AOTITorchError koharu_torch_generator_state(
   });
 }
 
-AOTITorchError koharu_torch_generator_set_state(
+AOTITorchError aten_generator_set_state(
     AtenGeneratorHandle handle,
     AtenTensorHandle state) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -269,7 +269,7 @@ AOTITorchError koharu_torch_generator_set_state(
 
 // --- Accelerator ------------------------------------------------------------
 
-AOTITorchError koharu_torch_accelerator(int32_t* type, int32_t* count) {
+AOTITorchError aten_accelerator(int32_t* type, int32_t* count) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     auto accelerator = at::accelerator::getAccelerator(/*checked=*/false);
     *type = accelerator ? static_cast<int32_t>(*accelerator) : -1;
@@ -277,21 +277,21 @@ AOTITorchError koharu_torch_accelerator(int32_t* type, int32_t* count) {
   });
 }
 
-AOTITorchError koharu_torch_set_device(int32_t index) {
+AOTITorchError aten_set_device(int32_t index) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     at::accelerator::setDeviceIndex(static_cast<c10::DeviceIndex>(index));
   });
 }
 
-AOTITorchError koharu_torch_synchronize(int32_t index) {
+AOTITorchError aten_synchronize(int32_t index) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     at::accelerator::synchronizeDevice(static_cast<c10::DeviceIndex>(index));
   });
 }
 
-AOTITorchError koharu_torch_memory_stats(
+AOTITorchError aten_memory_stats(
     int32_t index,
-    KoharuTorchMemoryStats* ret) {
+    AtenMemoryStats* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     auto stats =
         at::accelerator::getDeviceStats(static_cast<c10::DeviceIndex>(index));
@@ -314,20 +314,20 @@ AOTITorchError koharu_torch_memory_stats(
   });
 }
 
-AOTITorchError koharu_torch_reset_peak_memory_stats(int32_t index) {
+AOTITorchError aten_reset_peak_memory_stats(int32_t index) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     at::accelerator::resetPeakStats(static_cast<c10::DeviceIndex>(index));
   });
 }
 
-AOTITorchError koharu_torch_reset_accumulated_memory_stats(int32_t index) {
+AOTITorchError aten_reset_accumulated_memory_stats(int32_t index) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     at::accelerator::resetAccumulatedStats(
         static_cast<c10::DeviceIndex>(index));
   });
 }
 
-AOTITorchError koharu_torch_memory_info(
+AOTITorchError aten_memory_info(
     int32_t index,
     uint64_t* free,
     uint64_t* total) {
@@ -339,37 +339,37 @@ AOTITorchError koharu_torch_memory_info(
   });
 }
 
-AOTITorchError koharu_torch_empty_cache(void) {
+AOTITorchError aten_empty_cache(void) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::accelerator::emptyCache(); });
 }
 
-AOTITorchError koharu_torch_empty_host_cache(void) {
+AOTITorchError aten_empty_host_cache(void) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::accelerator::emptyHostCache(); });
 }
 
 // --- Streams and events -----------------------------------------------------
 
-AOTITorchError koharu_torch_current_stream(
+AOTITorchError aten_current_stream(
     int32_t index,
-    KoharuTorchStream* ret) {
+    AtenStream* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     *ret = from_stream(at::accelerator::getCurrentStream(
         static_cast<c10::DeviceIndex>(index)));
   });
 }
 
-AOTITorchError koharu_torch_set_current_stream(KoharuTorchStream value) {
+AOTITorchError aten_set_current_stream(AtenStream value) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::accelerator::setCurrentStream(stream(value)); });
 }
 
-AOTITorchError koharu_torch_stream_from_pool(
+AOTITorchError aten_stream_from_pool(
     int32_t type,
     int32_t index,
     bool high_priority,
-    KoharuTorchStream* ret) {
+    AtenStream* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     *ret = from_stream(
         c10::impl::getDeviceGuardImpl(device_type(type))
@@ -380,60 +380,60 @@ AOTITorchError koharu_torch_stream_from_pool(
   });
 }
 
-AOTITorchError koharu_torch_stream_synchronize(KoharuTorchStream value) {
+AOTITorchError aten_stream_synchronize(AtenStream value) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { stream(value).synchronize(); });
 }
 
-AOTITorchError koharu_torch_stream_query(KoharuTorchStream value, bool* ret) {
+AOTITorchError aten_stream_query(AtenStream value, bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = stream(value).query(); });
 }
 
-AOTITorchError koharu_torch_create_event(
+AOTITorchError aten_create_event(
     int32_t type,
     bool enable_timing,
-    KoharuTorchEventHandle* ret) {
+    AtenEventHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     // A backend's default event records timing; PyTorch's default doesn't.
-    *ret = reinterpret_cast<KoharuTorchEventHandle>(new c10::Event(
+    *ret = reinterpret_cast<AtenEventHandle>(new c10::Event(
         device_type(type),
         enable_timing ? c10::EventFlag::BACKEND_DEFAULT
                       : c10::EventFlag::PYTORCH_DEFAULT));
   });
 }
 
-AOTITorchError koharu_torch_delete_event(KoharuTorchEventHandle handle) {
+AOTITorchError aten_delete_event(AtenEventHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ delete event(handle); });
 }
 
-AOTITorchError koharu_torch_event_record(
-    KoharuTorchEventHandle handle,
-    KoharuTorchStream value) {
+AOTITorchError aten_event_record(
+    AtenEventHandle handle,
+    AtenStream value) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { event(handle)->record(stream(value)); });
 }
 
-AOTITorchError koharu_torch_event_block(
-    KoharuTorchEventHandle handle,
-    KoharuTorchStream value) {
+AOTITorchError aten_event_block(
+    AtenEventHandle handle,
+    AtenStream value) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { event(handle)->block(stream(value)); });
 }
 
-AOTITorchError koharu_torch_event_query(KoharuTorchEventHandle handle, bool* ret) {
+AOTITorchError aten_event_query(AtenEventHandle handle, bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = event(handle)->query(); });
 }
 
-AOTITorchError koharu_torch_event_synchronize(KoharuTorchEventHandle handle) {
+AOTITorchError aten_event_synchronize(AtenEventHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { event(handle)->synchronize(); });
 }
 
-AOTITorchError koharu_torch_event_elapsed_time(
-    KoharuTorchEventHandle start,
-    KoharuTorchEventHandle end,
+AOTITorchError aten_event_elapsed_time(
+    AtenEventHandle start,
+    AtenEventHandle end,
     double* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = event(start)->elapsedTime(*event(end)); });
@@ -441,48 +441,48 @@ AOTITorchError koharu_torch_event_elapsed_time(
 
 // --- Graphs -----------------------------------------------------------------
 
-AOTITorchError koharu_torch_create_graph(
+AOTITorchError aten_create_graph(
     bool keep_graph,
-    KoharuTorchGraphHandle* ret) {
+    AtenGraphHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
-    *ret = reinterpret_cast<KoharuTorchGraphHandle>(
+    *ret = reinterpret_cast<AtenGraphHandle>(
         new at::accelerator::Graph(keep_graph));
   });
 }
 
-AOTITorchError koharu_torch_delete_graph(KoharuTorchGraphHandle handle) {
+AOTITorchError aten_delete_graph(AtenGraphHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ delete graph(handle); });
 }
 
-AOTITorchError koharu_torch_graph_capture_begin(
-    KoharuTorchGraphHandle handle,
-    KoharuTorchMempoolId pool,
-    KoharuTorchGraphCaptureMode mode) {
+AOTITorchError aten_graph_capture_begin(
+    AtenGraphHandle handle,
+    AtenMempoolId pool,
+    AtenGraphCaptureMode mode) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     graph(handle)->capture_begin(
         {pool.first, pool.second}, static_cast<at::GraphCaptureMode>(mode));
   });
 }
 
-AOTITorchError koharu_torch_graph_capture_end(KoharuTorchGraphHandle handle) {
+AOTITorchError aten_graph_capture_end(AtenGraphHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ graph(handle)->capture_end(); });
 }
 
-AOTITorchError koharu_torch_graph_instantiate(KoharuTorchGraphHandle handle) {
+AOTITorchError aten_graph_instantiate(AtenGraphHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ graph(handle)->instantiate(); });
 }
 
-AOTITorchError koharu_torch_graph_replay(KoharuTorchGraphHandle handle) {
+AOTITorchError aten_graph_replay(AtenGraphHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ graph(handle)->replay(); });
 }
 
-AOTITorchError koharu_torch_graph_reset(KoharuTorchGraphHandle handle) {
+AOTITorchError aten_graph_reset(AtenGraphHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ graph(handle)->reset(); });
 }
 
-AOTITorchError koharu_torch_graph_pool(
-    KoharuTorchGraphHandle handle,
-    KoharuTorchMempoolId* ret) {
+AOTITorchError aten_graph_pool(
+    AtenGraphHandle handle,
+    AtenMempoolId* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     auto [first, second] = graph(handle)->pool();
     *ret = {first, second};
@@ -491,151 +491,151 @@ AOTITorchError koharu_torch_graph_pool(
 
 // --- Autocast ---------------------------------------------------------------
 
-AOTITorchError koharu_torch_set_autocast_enabled(int32_t type, bool enabled) {
+AOTITorchError aten_set_autocast_enabled(int32_t type, bool enabled) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::autocast::set_autocast_enabled(device_type(type), enabled); });
 }
 
-AOTITorchError koharu_torch_autocast_enabled(int32_t type, bool* ret) {
+AOTITorchError aten_autocast_enabled(int32_t type, bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::autocast::is_autocast_enabled(device_type(type)); });
 }
 
-AOTITorchError koharu_torch_set_autocast_dtype(int32_t type, int32_t dtype) {
+AOTITorchError aten_set_autocast_dtype(int32_t type, int32_t dtype) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     at::autocast::set_autocast_dtype(
         device_type(type), static_cast<at::ScalarType>(dtype));
   });
 }
 
-AOTITorchError koharu_torch_autocast_dtype(int32_t type, int32_t* ret) {
+AOTITorchError aten_autocast_dtype(int32_t type, int32_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     *ret = static_cast<int32_t>(
         at::autocast::get_autocast_dtype(device_type(type)));
   });
 }
 
-AOTITorchError koharu_torch_set_autocast_cache_enabled(bool enabled) {
+AOTITorchError aten_set_autocast_cache_enabled(bool enabled) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::autocast::set_autocast_cache_enabled(enabled); });
 }
 
-AOTITorchError koharu_torch_autocast_cache_enabled(bool* ret) {
+AOTITorchError aten_autocast_cache_enabled(bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::autocast::is_autocast_cache_enabled(); });
 }
 
-AOTITorchError koharu_torch_autocast_increment_nesting(int32_t* ret) {
+AOTITorchError aten_autocast_increment_nesting(int32_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::autocast::increment_nesting(); });
 }
 
-AOTITorchError koharu_torch_autocast_decrement_nesting(int32_t* ret) {
+AOTITorchError aten_autocast_decrement_nesting(int32_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::autocast::decrement_nesting(); });
 }
 
-AOTITorchError koharu_torch_autocast_clear_cache(void) {
+AOTITorchError aten_autocast_clear_cache(void) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { at::autocast::clear_cache(); });
 }
 
 // --- Settings ---------------------------------------------------------------
 
-AOTITorchError koharu_torch_set_setting(KoharuTorchSetting setting, int64_t value) {
+AOTITorchError aten_set_setting(AtenSetting setting, int64_t value) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     auto& context = at::globalContext();
     const bool on = value != 0;
     switch (setting) {
-      case KOHARU_TORCH_NUM_THREADS:
+      case ATEN_NUM_THREADS:
         at::set_num_threads(static_cast<int>(value));
         break;
-      case KOHARU_TORCH_NUM_INTEROP_THREADS:
+      case ATEN_NUM_INTEROP_THREADS:
         at::set_num_interop_threads(static_cast<int>(value));
         break;
-      case KOHARU_TORCH_CUDNN_ENABLED:
+      case ATEN_CUDNN_ENABLED:
         context.setUserEnabledCuDNN(on);
         break;
-      case KOHARU_TORCH_CUDNN_BENCHMARK:
+      case ATEN_CUDNN_BENCHMARK:
         context.setBenchmarkCuDNN(on);
         break;
-      case KOHARU_TORCH_CUDNN_BENCHMARK_LIMIT:
+      case ATEN_CUDNN_BENCHMARK_LIMIT:
         context.setBenchmarkLimitCuDNN(static_cast<int>(value));
         break;
-      case KOHARU_TORCH_CUDNN_DETERMINISTIC:
+      case ATEN_CUDNN_DETERMINISTIC:
         context.setDeterministicCuDNN(on);
         break;
-      case KOHARU_TORCH_CUDNN_ALLOW_TF32:
+      case ATEN_CUDNN_ALLOW_TF32:
         context.setAllowTF32CuDNN(on);
         break;
-      case KOHARU_TORCH_CUBLAS_ALLOW_TF32:
+      case ATEN_CUBLAS_ALLOW_TF32:
         context.setAllowTF32CuBLAS(on);
         break;
-      case KOHARU_TORCH_CUBLAS_ALLOW_FP16_ACCUMULATION:
+      case ATEN_CUBLAS_ALLOW_FP16_ACCUMULATION:
         context.setAllowFP16AccumulationCuBLAS(on);
         break;
-      case KOHARU_TORCH_FLOAT32_MATMUL_PRECISION: {
+      case ATEN_FLOAT32_MATMUL_PRECISION: {
         static const char* names[] = {"highest", "high", "medium"};
         TORCH_CHECK(value >= 0 && value < 3, "no float32 matmul precision ", value);
         context.setFloat32MatmulPrecision(names[value]);
         break;
       }
-      case KOHARU_TORCH_BLAS_BACKEND:
+      case ATEN_BLAS_BACKEND:
         context.setBlasPreferredBackend(static_cast<at::BlasBackend>(value));
         break;
-      case KOHARU_TORCH_LINALG_BACKEND:
+      case ATEN_LINALG_BACKEND:
         context.setLinalgPreferredBackend(static_cast<at::LinalgBackend>(value));
         break;
-      case KOHARU_TORCH_ROCM_FA_BACKEND:
+      case ATEN_ROCM_FA_BACKEND:
         context.setROCmFAPreferredBackend(static_cast<at::ROCmFABackend>(value));
         break;
-      case KOHARU_TORCH_SDP_FLASH:
+      case ATEN_SDP_FLASH:
         context.setSDPUseFlash(on);
         break;
-      case KOHARU_TORCH_SDP_FA3:
+      case ATEN_SDP_FA3:
         context.setSDPUseFA3(on);
         break;
-      case KOHARU_TORCH_SDP_FA4:
+      case ATEN_SDP_FA4:
         context.setSDPUseFA4(on);
         break;
-      case KOHARU_TORCH_SDP_MEM_EFFICIENT:
+      case ATEN_SDP_MEM_EFFICIENT:
         context.setSDPUseMemEfficient(on);
         break;
-      case KOHARU_TORCH_SDP_MATH:
+      case ATEN_SDP_MATH:
         context.setSDPUseMath(on);
         break;
-      case KOHARU_TORCH_SDP_CUDNN:
+      case ATEN_SDP_CUDNN:
         context.setSDPUseCuDNN(on);
         break;
-      case KOHARU_TORCH_SDP_OVERRIDEABLE:
+      case ATEN_SDP_OVERRIDEABLE:
         context.setSDPUseOverrideable(on);
         break;
-      case KOHARU_TORCH_SDP_MATH_FP16_BF16_REDUCTION:
+      case ATEN_SDP_MATH_FP16_BF16_REDUCTION:
         context.setAllowFP16BF16ReductionMathSDP(on);
         break;
-      case KOHARU_TORCH_MKLDNN_ENABLED:
+      case ATEN_MKLDNN_ENABLED:
         context.setUserEnabledMkldnn(on);
         break;
-      case KOHARU_TORCH_MKLDNN_DETERMINISTIC:
+      case ATEN_MKLDNN_DETERMINISTIC:
         context.setDeterministicMkldnn(on);
         break;
-      case KOHARU_TORCH_NNPACK_ENABLED:
+      case ATEN_NNPACK_ENABLED:
         context.setUserEnabledNNPACK(on);
         break;
-      case KOHARU_TORCH_CPU_ALLOW_FP16_REDUCTION:
+      case ATEN_CPU_ALLOW_FP16_REDUCTION:
         context.setAllowFP16ReductionCPU(on);
         break;
-      case KOHARU_TORCH_DETERMINISTIC_ALGORITHMS:
+      case ATEN_DETERMINISTIC_ALGORITHMS:
         context.setDeterministicAlgorithms(
             on, context.deterministicAlgorithmsWarnOnly());
         break;
-      case KOHARU_TORCH_DETERMINISTIC_ALGORITHMS_WARN_ONLY:
+      case ATEN_DETERMINISTIC_ALGORITHMS_WARN_ONLY:
         context.setDeterministicAlgorithms(context.deterministicAlgorithms(), on);
         break;
-      case KOHARU_TORCH_DETERMINISTIC_FILL_UNINITIALIZED_MEMORY:
+      case ATEN_DETERMINISTIC_FILL_UNINITIALIZED_MEMORY:
         context.setDeterministicFillUninitializedMemory(on);
         break;
-      case KOHARU_TORCH_QUANTIZED_ENGINE:
+      case ATEN_QUANTIZED_ENGINE:
         context.setQEngine(static_cast<at::QEngine>(value));
         break;
       default:
@@ -644,95 +644,95 @@ AOTITorchError koharu_torch_set_setting(KoharuTorchSetting setting, int64_t valu
   });
 }
 
-AOTITorchError koharu_torch_setting(KoharuTorchSetting setting, int64_t* ret) {
+AOTITorchError aten_setting(AtenSetting setting, int64_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     auto& context = at::globalContext();
     switch (setting) {
-      case KOHARU_TORCH_NUM_THREADS:
+      case ATEN_NUM_THREADS:
         *ret = at::get_num_threads();
         break;
-      case KOHARU_TORCH_NUM_INTEROP_THREADS:
+      case ATEN_NUM_INTEROP_THREADS:
         *ret = static_cast<int64_t>(at::get_num_interop_threads());
         break;
-      case KOHARU_TORCH_CUDNN_ENABLED:
+      case ATEN_CUDNN_ENABLED:
         *ret = context.userEnabledCuDNN();
         break;
-      case KOHARU_TORCH_CUDNN_BENCHMARK:
+      case ATEN_CUDNN_BENCHMARK:
         *ret = context.benchmarkCuDNN();
         break;
-      case KOHARU_TORCH_CUDNN_BENCHMARK_LIMIT:
+      case ATEN_CUDNN_BENCHMARK_LIMIT:
         *ret = context.benchmarkLimitCuDNN();
         break;
-      case KOHARU_TORCH_CUDNN_DETERMINISTIC:
+      case ATEN_CUDNN_DETERMINISTIC:
         *ret = context.deterministicCuDNN();
         break;
-      case KOHARU_TORCH_CUDNN_ALLOW_TF32:
+      case ATEN_CUDNN_ALLOW_TF32:
         *ret = context.allowTF32CuDNN();
         break;
-      case KOHARU_TORCH_CUBLAS_ALLOW_TF32:
+      case ATEN_CUBLAS_ALLOW_TF32:
         *ret = context.allowTF32CuBLAS();
         break;
-      case KOHARU_TORCH_CUBLAS_ALLOW_FP16_ACCUMULATION:
+      case ATEN_CUBLAS_ALLOW_FP16_ACCUMULATION:
         *ret = context.allowFP16AccumulationCuBLAS();
         break;
-      case KOHARU_TORCH_FLOAT32_MATMUL_PRECISION:
+      case ATEN_FLOAT32_MATMUL_PRECISION:
         *ret = static_cast<int64_t>(context.float32MatmulPrecision());
         break;
-      case KOHARU_TORCH_BLAS_BACKEND:
+      case ATEN_BLAS_BACKEND:
         *ret = static_cast<int64_t>(context.blasPreferredBackend());
         break;
-      case KOHARU_TORCH_LINALG_BACKEND:
+      case ATEN_LINALG_BACKEND:
         *ret = static_cast<int64_t>(context.linalgPreferredBackend());
         break;
-      case KOHARU_TORCH_ROCM_FA_BACKEND:
+      case ATEN_ROCM_FA_BACKEND:
         *ret = static_cast<int64_t>(context.getROCmFAPreferredBackend());
         break;
-      case KOHARU_TORCH_SDP_FLASH:
+      case ATEN_SDP_FLASH:
         *ret = context.userEnabledFlashSDP();
         break;
-      case KOHARU_TORCH_SDP_FA3:
+      case ATEN_SDP_FA3:
         *ret = context.userEnabledFA3SDP();
         break;
-      case KOHARU_TORCH_SDP_FA4:
+      case ATEN_SDP_FA4:
         *ret = context.userEnabledFA4SDP();
         break;
-      case KOHARU_TORCH_SDP_MEM_EFFICIENT:
+      case ATEN_SDP_MEM_EFFICIENT:
         *ret = context.userEnabledMemEfficientSDP();
         break;
-      case KOHARU_TORCH_SDP_MATH:
+      case ATEN_SDP_MATH:
         *ret = context.userEnabledMathSDP();
         break;
-      case KOHARU_TORCH_SDP_CUDNN:
+      case ATEN_SDP_CUDNN:
         *ret = context.userEnabledCuDNNSDP();
         break;
-      case KOHARU_TORCH_SDP_OVERRIDEABLE:
+      case ATEN_SDP_OVERRIDEABLE:
         *ret = context.userEnabledOverrideableSDP();
         break;
-      case KOHARU_TORCH_SDP_MATH_FP16_BF16_REDUCTION:
+      case ATEN_SDP_MATH_FP16_BF16_REDUCTION:
         *ret = context.allowFP16BF16ReductionMathSDP();
         break;
-      case KOHARU_TORCH_MKLDNN_ENABLED:
+      case ATEN_MKLDNN_ENABLED:
         *ret = context.userEnabledMkldnn();
         break;
-      case KOHARU_TORCH_MKLDNN_DETERMINISTIC:
+      case ATEN_MKLDNN_DETERMINISTIC:
         *ret = context.deterministicMkldnn();
         break;
-      case KOHARU_TORCH_NNPACK_ENABLED:
+      case ATEN_NNPACK_ENABLED:
         *ret = context.userEnabledNNPACK();
         break;
-      case KOHARU_TORCH_CPU_ALLOW_FP16_REDUCTION:
+      case ATEN_CPU_ALLOW_FP16_REDUCTION:
         *ret = context.allowFP16ReductionCPU();
         break;
-      case KOHARU_TORCH_DETERMINISTIC_ALGORITHMS:
+      case ATEN_DETERMINISTIC_ALGORITHMS:
         *ret = context.deterministicAlgorithms();
         break;
-      case KOHARU_TORCH_DETERMINISTIC_ALGORITHMS_WARN_ONLY:
+      case ATEN_DETERMINISTIC_ALGORITHMS_WARN_ONLY:
         *ret = context.deterministicAlgorithmsWarnOnly();
         break;
-      case KOHARU_TORCH_DETERMINISTIC_FILL_UNINITIALIZED_MEMORY:
+      case ATEN_DETERMINISTIC_FILL_UNINITIALIZED_MEMORY:
         *ret = context.deterministicFillUninitializedMemory();
         break;
-      case KOHARU_TORCH_QUANTIZED_ENGINE:
+      case ATEN_QUANTIZED_ENGINE:
         *ret = static_cast<int64_t>(context.qEngine());
         break;
       default:
@@ -743,40 +743,40 @@ AOTITorchError koharu_torch_setting(KoharuTorchSetting setting, int64_t* ret) {
 
 // --- Build ------------------------------------------------------------------
 
-AOTITorchError koharu_torch_has(KoharuTorchFeature feature, bool* ret) {
+AOTITorchError aten_has(AtenFeature feature, bool* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     switch (feature) {
-      case KOHARU_TORCH_HAS_CUDA:
+      case ATEN_HAS_CUDA:
         *ret = at::hasCUDA();
         break;
-      case KOHARU_TORCH_HAS_HIP:
+      case ATEN_HAS_HIP:
         *ret = at::hasHIP();
         break;
-      case KOHARU_TORCH_HAS_MPS:
+      case ATEN_HAS_MPS:
         *ret = at::hasMPS();
         break;
-      case KOHARU_TORCH_HAS_XPU:
+      case ATEN_HAS_XPU:
         *ret = at::hasXPU();
         break;
-      case KOHARU_TORCH_HAS_CUDNN:
+      case ATEN_HAS_CUDNN:
         *ret = at::detail::getCUDAHooks().hasCuDNN();
         break;
-      case KOHARU_TORCH_HAS_MKL:
+      case ATEN_HAS_MKL:
         *ret = at::hasMKL();
         break;
-      case KOHARU_TORCH_HAS_MKLDNN:
+      case ATEN_HAS_MKLDNN:
         *ret = at::hasMKLDNN();
         break;
-      case KOHARU_TORCH_HAS_OPENMP:
+      case ATEN_HAS_OPENMP:
         *ret = at::hasOpenMP();
         break;
-      case KOHARU_TORCH_HAS_LAPACK:
+      case ATEN_HAS_LAPACK:
         *ret = at::hasLAPACK();
         break;
-      case KOHARU_TORCH_HAS_MAGMA:
+      case ATEN_HAS_MAGMA:
         *ret = at::hasMAGMA();
         break;
-      case KOHARU_TORCH_HAS_KLEIDIAI:
+      case ATEN_HAS_KLEIDIAI:
         *ret = at::hasKleidiAI();
         break;
       default:
@@ -785,19 +785,19 @@ AOTITorchError koharu_torch_has(KoharuTorchFeature feature, bool* ret) {
   });
 }
 
-AOTITorchError koharu_torch_library_version(
-    KoharuTorchLibrary library,
+AOTITorchError aten_library_version(
+    AtenLibrary library,
     int64_t* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     const auto& hooks = at::detail::getCUDAHooks();
     switch (library) {
-      case KOHARU_TORCH_CUDNN_VERSION:
+      case ATEN_CUDNN_VERSION:
         *ret = hooks.versionCuDNN();
         break;
-      case KOHARU_TORCH_CUDA_RUNTIME_VERSION:
+      case ATEN_CUDA_RUNTIME_VERSION:
         *ret = hooks.versionCUDART();
         break;
-      case KOHARU_TORCH_HIPBLASLT_VERSION:
+      case ATEN_HIPBLASLT_VERSION:
         *ret = hooks.versionHipBLASLt();
         break;
       default:
@@ -806,25 +806,25 @@ AOTITorchError koharu_torch_library_version(
   });
 }
 
-AOTITorchError koharu_torch_info(KoharuTorchInfo info, StringHandle* ret) {
+AOTITorchError aten_info(AtenInfo info, StringHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
     switch (info) {
-      case KOHARU_TORCH_CONFIG:
+      case ATEN_CONFIG:
         *ret = new_string(at::show_config());
         break;
-      case KOHARU_TORCH_PARALLEL_INFO:
+      case ATEN_PARALLEL_INFO:
         *ret = new_string(at::get_parallel_info());
         break;
-      case KOHARU_TORCH_CPU_CAPABILITY:
+      case ATEN_CPU_CAPABILITY:
         *ret = new_string(at::get_cpu_capability());
         break;
-      case KOHARU_TORCH_MKL_VERSION:
+      case ATEN_MKL_VERSION:
         *ret = new_string(at::get_mkl_version());
         break;
-      case KOHARU_TORCH_MKLDNN_VERSION:
+      case ATEN_MKLDNN_VERSION:
         *ret = new_string(at::get_mkldnn_version());
         break;
-      case KOHARU_TORCH_OPENMP_VERSION:
+      case ATEN_OPENMP_VERSION:
         *ret = new_string(at::get_openmp_version());
         break;
       default:
@@ -835,7 +835,7 @@ AOTITorchError koharu_torch_info(KoharuTorchInfo info, StringHandle* ret) {
 
 // --- Interchange ------------------------------------------------------------
 
-AOTITorchError koharu_torch_tensor_to_string(
+AOTITorchError aten_tensor_to_string(
     AtenTensorHandle tensor,
     StringHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
@@ -845,35 +845,35 @@ AOTITorchError koharu_torch_tensor_to_string(
   });
 }
 
-AOTITorchError koharu_torch_to_dlpack(
+AOTITorchError aten_to_dlpack(
     AtenTensorHandle tensor,
     DLManagedTensorVersioned** ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::toDLPackVersioned(*tensor_handle_to_tensor_pointer(tensor)); });
 }
 
-AOTITorchError koharu_torch_from_dlpack(
+AOTITorchError aten_from_dlpack(
     DLManagedTensorVersioned* capsule,
     AtenTensorHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = new_tensor_handle(at::fromDLPackVersioned(capsule)); });
 }
 
-AOTITorchError koharu_torch_to_dlpack_unversioned(
+AOTITorchError aten_to_dlpack_unversioned(
     AtenTensorHandle tensor,
     DLManagedTensor** ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = at::toDLPack(*tensor_handle_to_tensor_pointer(tensor)); });
 }
 
-AOTITorchError koharu_torch_from_dlpack_unversioned(
+AOTITorchError aten_from_dlpack_unversioned(
     DLManagedTensor* capsule,
     AtenTensorHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { *ret = new_tensor_handle(at::fromDLPack(capsule)); });
 }
 
-AOTITorchError koharu_torch_save(
+AOTITorchError aten_save(
     const char* const* names,
     const AtenTensorHandle* handles,
     int64_t len,
@@ -888,7 +888,7 @@ AOTITorchError koharu_torch_save(
   });
 }
 
-AOTITorchError koharu_torch_load(
+AOTITorchError aten_load(
     const void* data,
     size_t size,
     StringHandle** names,
@@ -922,21 +922,21 @@ AOTITorchError koharu_torch_load(
     }
     int64_t names_len = 0;
     new_strings(keys, names, &names_len);
-    koharu_torch_tensor_list(std::move(values), handles, len);
+    aten_tensor_list(std::move(values), handles, len);
   });
 }
 
 // --- AOTInductor packages ---------------------------------------------------
 
-AOTITorchError koharu_torch_load_aoti_package(
+AOTITorchError aten_load_aoti_package(
     const char* path,
     const char* model_name,
     bool run_single_threaded,
     int64_t num_runners,
     int32_t device_index,
-    KoharuTorchAotiPackageHandle* ret) {
+    AtenAotiPackageHandle* ret) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
-    *ret = reinterpret_cast<KoharuTorchAotiPackageHandle>(
+    *ret = reinterpret_cast<AtenAotiPackageHandle>(
         new torch::inductor::AOTIModelPackageLoader(
             path,
             model_name,
@@ -946,26 +946,26 @@ AOTITorchError koharu_torch_load_aoti_package(
   });
 }
 
-AOTITorchError koharu_torch_delete_aoti_package(
-    KoharuTorchAotiPackageHandle handle) {
+AOTITorchError aten_delete_aoti_package(
+    AtenAotiPackageHandle handle) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({ delete package(handle); });
 }
 
-AOTITorchError koharu_torch_aoti_package_run(
-    KoharuTorchAotiPackageHandle handle,
+AOTITorchError aten_aoti_package_run(
+    AtenAotiPackageHandle handle,
     const AtenTensorHandle* inputs,
     int64_t inputs_len,
     void* stream,
     AtenTensorHandle** ret,
     int64_t* ret_len) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
-    koharu_torch_tensor_list(
+    aten_tensor_list(
         package(handle)->run(tensors(inputs, inputs_len), stream), ret, ret_len);
   });
 }
 
-AOTITorchError koharu_torch_aoti_package_metadata(
-    KoharuTorchAotiPackageHandle handle,
+AOTITorchError aten_aoti_package_metadata(
+    AtenAotiPackageHandle handle,
     StringHandle** keys,
     StringHandle** values,
     int64_t* len) {
@@ -980,24 +980,24 @@ AOTITorchError koharu_torch_aoti_package_metadata(
   });
 }
 
-AOTITorchError koharu_torch_aoti_package_call_spec(
-    KoharuTorchAotiPackageHandle handle,
+AOTITorchError aten_aoti_package_call_spec(
+    AtenAotiPackageHandle handle,
     StringHandle** ret,
     int64_t* ret_len) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { new_strings(package(handle)->get_call_spec(), ret, ret_len); });
 }
 
-AOTITorchError koharu_torch_aoti_package_constant_names(
-    KoharuTorchAotiPackageHandle handle,
+AOTITorchError aten_aoti_package_constant_names(
+    AtenAotiPackageHandle handle,
     StringHandle** ret,
     int64_t* ret_len) {
   AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE(
       { new_strings(package(handle)->get_constant_fqns(), ret, ret_len); });
 }
 
-AOTITorchError koharu_torch_aoti_package_load_constants(
-    KoharuTorchAotiPackageHandle handle,
+AOTITorchError aten_aoti_package_load_constants(
+    AtenAotiPackageHandle handle,
     const char* const* names,
     const AtenTensorHandle* handles,
     int64_t len,
@@ -1016,8 +1016,8 @@ AOTITorchError koharu_torch_aoti_package_load_constants(
 
 // --- Warnings ---------------------------------------------------------------
 
-void koharu_torch_set_warning_handler(
-    KoharuTorchWarningHandler handler,
+void aten_set_warning_handler(
+    AtenWarningHandler handler,
     void* context) {
   warning_handler.handler = handler;
   warning_handler.context = context;

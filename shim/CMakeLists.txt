@@ -29,7 +29,7 @@ add_library(koharu-torch SHARED koharu_torch.cpp ${generated})
 target_include_directories(koharu-torch PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
   "${LIBTORCH}/include" "${LIBTORCH}/include/torch/csrc/api/include")
-target_compile_definitions(koharu-torch PRIVATE KOHARU_TORCH_BUILD)
+target_compile_definitions(koharu-torch PRIVATE ATEN_BUILD)
 if(MSVC)
   # What libtorch's CMake package gives an MSVC consumer.
   target_compile_options(koharu-torch PRIVATE /permissive- /EHsc /bigobj)

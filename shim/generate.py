@@ -13,7 +13,7 @@ serves Inductor rather than a general caller:
   conjugate or negative view first, because its backend kernels skip the
   dispatcher, which resolves those views itself; a clone would lose an
   in-place write.
-- A Scalar crosses as KoharuTorchScalar, which keeps its type. The
+- A Scalar crosses as AtenScalar, which keeps its type. The
   AOTInductor shim's double turns an integer into a float, which changes
   type promotion.
 - A Tensor[] result crosses as an array of handles.
@@ -71,32 +71,32 @@ def main() -> None:
     # Each base type's C type, ATen type, and conversion of the C argument `{}`.
     base = {
         BaseTy.Tensor: ("AtenTensorHandle", "at::Tensor", "*tensor_handle_to_tensor_pointer({})"),
-        BaseTy.bool: ("KoharuTorchBool", "bool", "{}"),
+        BaseTy.bool: ("AtenBool", "bool", "{}"),
         BaseTy.int: ("int64_t", "int64_t", "{}"),
         BaseTy.SymInt: ("int64_t", "c10::SymInt", "{}"),
         BaseTy.float: ("double", "double", "{}"),
         BaseTy.str: ("const char*", "std::string_view", "{}"),
-        BaseTy.Scalar: ("KoharuTorchScalar", "c10::Scalar", "koharu_torch_scalar({})"),
-        BaseTy.ScalarType: ("KoharuTorchDtype", "c10::ScalarType", "static_cast<c10::ScalarType>({})"),
-        BaseTy.Layout: ("KoharuTorchLayout", "c10::Layout", "static_cast<c10::Layout>({})"),
-        BaseTy.MemoryFormat: ("KoharuTorchMemoryFormat", "c10::MemoryFormat", "static_cast<c10::MemoryFormat>({})"),
-        BaseTy.QScheme: ("KoharuTorchQScheme", "c10::QScheme", "static_cast<c10::QScheme>({})"),
+        BaseTy.Scalar: ("AtenScalar", "c10::Scalar", "aten_scalar({})"),
+        BaseTy.ScalarType: ("AtenDtype", "c10::ScalarType", "static_cast<c10::ScalarType>({})"),
+        BaseTy.Layout: ("AtenLayout", "c10::Layout", "static_cast<c10::Layout>({})"),
+        BaseTy.MemoryFormat: ("AtenMemoryFormat", "c10::MemoryFormat", "static_cast<c10::MemoryFormat>({})"),
+        BaseTy.QScheme: ("AtenQScheme", "c10::QScheme", "static_cast<c10::QScheme>({})"),
         BaseTy.DeviceIndex: ("int32_t", "c10::DeviceIndex", "static_cast<c10::DeviceIndex>({})"),
         BaseTy.Generator: ("AtenGeneratorHandle", "at::Generator", "*generator_handle_to_generator_pointer({})"),
     }
     # Each result type's C type and assignment of the ATen value `{v}` to `{r}`.
     results = {
         BaseType(BaseTy.Tensor): ("AtenTensorHandle", "*{r} = new_tensor_handle(std::move({v}));"),
-        BaseType(BaseTy.bool): ("KoharuTorchBool", "*{r} = {v};"),
+        BaseType(BaseTy.bool): ("AtenBool", "*{r} = {v};"),
         BaseType(BaseTy.int): ("int64_t", "*{r} = {v};"),
         BaseType(BaseTy.SymInt): ("int64_t", "*{r} = {v}.expect_int();"),
-        BaseType(BaseTy.SymBool): ("KoharuTorchBool", "*{r} = {v}.guard_bool(__FILE__, __LINE__);"),
+        BaseType(BaseTy.SymBool): ("AtenBool", "*{r} = {v}.guard_bool(__FILE__, __LINE__);"),
         BaseType(BaseTy.float): ("double", "*{r} = {v};"),
-        BaseType(BaseTy.Scalar): ("KoharuTorchScalar", "*{r} = koharu_torch_from_scalar({v});"),
-        BaseType(BaseTy.ScalarType): ("KoharuTorchDtype", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.Layout): ("KoharuTorchLayout", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.MemoryFormat): ("KoharuTorchMemoryFormat", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.QScheme): ("KoharuTorchQScheme", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.Scalar): ("AtenScalar", "*{r} = aten_from_scalar({v});"),
+        BaseType(BaseTy.ScalarType): ("AtenDtype", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.Layout): ("AtenLayout", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.MemoryFormat): ("AtenMemoryFormat", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.QScheme): ("AtenQScheme", "*{r} = static_cast<int32_t>({v});"),
     }
 
     def known(ty):
@@ -109,7 +109,7 @@ def main() -> None:
         if isinstance(typ, BaseType):
             if typ.name == BaseTy.Device:
                 return (
-                    [f"KoharuTorchDeviceType {name}", f"int32_t {name}_index_"],
+                    [f"AtenDeviceType {name}", f"int32_t {name}_index_"],
                     f"c10::Device(static_cast<c10::DeviceType>({name}), static_cast<c10::DeviceIndex>({name}_index_))",
                 )
             c, _, expr = known(typ.name)
@@ -119,11 +119,11 @@ def main() -> None:
             if isinstance(elem, BaseType):
                 if elem.name == BaseTy.Device:
                     return (
-                        [f"KoharuTorchDeviceType* {name}", f"int32_t {name}_index_"],
+                        [f"AtenDeviceType* {name}", f"int32_t {name}_index_"],
                         f"pointer_to_optional_device({name}, {name}_index_)",
                     )
                 if elem.name == BaseTy.Scalar:
-                    return [f"KoharuTorchScalar* {name}"], f"koharu_torch_scalar({name})"
+                    return [f"AtenScalar* {name}"], f"aten_scalar({name})"
                 c, aten, _ = known(elem.name)
                 return [f"{c}* {name}"], f"pointer_to_optional<{aten}>({name})"
             if isinstance(elem, ListType) and isinstance(elem.elem, BaseType):
@@ -147,11 +147,11 @@ def main() -> None:
             if not isinstance(elem, BaseType) or elem.name == BaseTy.Device:
                 raise NotImplementedError(f"{typ}")
             if elem.name == BaseTy.Scalar:
-                return params("const KoharuTorchScalar*"), f"koharu_torch_scalars({name}, {name}_len_)"
+                return params("const AtenScalar*"), f"aten_scalars({name}, {name}_len_)"
             if elem.name == BaseTy.bool:
                 if typ.size is None:
                     raise NotImplementedError(f"{typ}")
-                return params("const KoharuTorchBool*"), f"pointer_to_list<{typ.size}>({name})"
+                return params("const AtenBool*"), f"pointer_to_list<{typ.size}>({name})"
             c, aten, _ = known(elem.name)
             pointer = "const char* const*" if elem.name == BaseTy.str else f"const {c}*"
             return params(pointer), f"pointer_to_list<{aten}>({name}, {name}_len_)"
@@ -162,7 +162,7 @@ def main() -> None:
         if isinstance(typ, ListType) and typ.elem == BaseType(BaseTy.Tensor):
             return (
                 [f"AtenTensorHandle** {name}", f"int64_t* {name}_len_"],
-                f"koharu_torch_tensor_list(std::move({value}), {name}, {name}_len_);",
+                f"aten_tensor_list(std::move({value}), {name}, {name}_len_);",
             )
         if typ not in results:
             raise NotImplementedError(f"{typ}")
@@ -188,7 +188,7 @@ def main() -> None:
             ret_params, assignment = result(ret.type, f"ret{index}", value)
             params += ret_params
             assignments.append(assignment)
-        signature = f"AOTITorchError koharu_torch_aten_{name}({', '.join(params) or 'void'})"
+        signature = f"AOTITorchError aten_{name}({', '.join(params) or 'void'})"
         call = f"at::_ops::{name}::call({', '.join(exprs)});"
         body = "\n".join([f"auto tmp_result = {call}" if assignments else call, *assignments])
         definition = (
@@ -197,7 +197,7 @@ def main() -> None:
             + "".join(f"    {line}\n" for line in body.splitlines())
             + "  });\n}\n"
         )
-        return f"KOHARU_TORCH_API {signature};", definition
+        return f"ATEN_API {signature};", definition
 
     native = args.pytorch / "aten" / "src" / "ATen" / "native"
     functions = parse_native_yaml(
