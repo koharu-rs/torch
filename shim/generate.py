@@ -17,6 +17,9 @@ serves Inductor rather than a general caller:
   AOTInductor shim's double turns an integer into a float, which changes
   type promotion.
 - A Tensor[] result crosses as an array of handles.
+- A bool or one of libtorch's enums is still an int32_t, but under a name
+  from koharu_torch.h that says which, so a binding generated from the
+  header can tell a dtype from a flag.
 """
 
 import argparse
@@ -68,32 +71,32 @@ def main() -> None:
     # Each base type's C type, ATen type, and conversion of the C argument `{}`.
     base = {
         BaseTy.Tensor: ("AtenTensorHandle", "at::Tensor", "*tensor_handle_to_tensor_pointer({})"),
-        BaseTy.bool: ("int32_t", "bool", "{}"),
+        BaseTy.bool: ("KoharuTorchBool", "bool", "{}"),
         BaseTy.int: ("int64_t", "int64_t", "{}"),
         BaseTy.SymInt: ("int64_t", "c10::SymInt", "{}"),
         BaseTy.float: ("double", "double", "{}"),
         BaseTy.str: ("const char*", "std::string_view", "{}"),
         BaseTy.Scalar: ("KoharuTorchScalar", "c10::Scalar", "koharu_torch_scalar({})"),
-        BaseTy.ScalarType: ("int32_t", "c10::ScalarType", "static_cast<c10::ScalarType>({})"),
-        BaseTy.Layout: ("int32_t", "c10::Layout", "static_cast<c10::Layout>({})"),
-        BaseTy.MemoryFormat: ("int32_t", "c10::MemoryFormat", "static_cast<c10::MemoryFormat>({})"),
-        BaseTy.QScheme: ("int32_t", "c10::QScheme", "static_cast<c10::QScheme>({})"),
+        BaseTy.ScalarType: ("KoharuTorchDtype", "c10::ScalarType", "static_cast<c10::ScalarType>({})"),
+        BaseTy.Layout: ("KoharuTorchLayout", "c10::Layout", "static_cast<c10::Layout>({})"),
+        BaseTy.MemoryFormat: ("KoharuTorchMemoryFormat", "c10::MemoryFormat", "static_cast<c10::MemoryFormat>({})"),
+        BaseTy.QScheme: ("KoharuTorchQScheme", "c10::QScheme", "static_cast<c10::QScheme>({})"),
         BaseTy.DeviceIndex: ("int32_t", "c10::DeviceIndex", "static_cast<c10::DeviceIndex>({})"),
         BaseTy.Generator: ("AtenGeneratorHandle", "at::Generator", "*generator_handle_to_generator_pointer({})"),
     }
     # Each result type's C type and assignment of the ATen value `{v}` to `{r}`.
     results = {
         BaseType(BaseTy.Tensor): ("AtenTensorHandle", "*{r} = new_tensor_handle(std::move({v}));"),
-        BaseType(BaseTy.bool): ("int32_t", "*{r} = {v};"),
+        BaseType(BaseTy.bool): ("KoharuTorchBool", "*{r} = {v};"),
         BaseType(BaseTy.int): ("int64_t", "*{r} = {v};"),
         BaseType(BaseTy.SymInt): ("int64_t", "*{r} = {v}.expect_int();"),
-        BaseType(BaseTy.SymBool): ("int32_t", "*{r} = {v}.guard_bool(__FILE__, __LINE__);"),
+        BaseType(BaseTy.SymBool): ("KoharuTorchBool", "*{r} = {v}.guard_bool(__FILE__, __LINE__);"),
         BaseType(BaseTy.float): ("double", "*{r} = {v};"),
         BaseType(BaseTy.Scalar): ("KoharuTorchScalar", "*{r} = koharu_torch_from_scalar({v});"),
-        BaseType(BaseTy.ScalarType): ("int32_t", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.Layout): ("int32_t", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.MemoryFormat): ("int32_t", "*{r} = static_cast<int32_t>({v});"),
-        BaseType(BaseTy.QScheme): ("int32_t", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.ScalarType): ("KoharuTorchDtype", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.Layout): ("KoharuTorchLayout", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.MemoryFormat): ("KoharuTorchMemoryFormat", "*{r} = static_cast<int32_t>({v});"),
+        BaseType(BaseTy.QScheme): ("KoharuTorchQScheme", "*{r} = static_cast<int32_t>({v});"),
     }
 
     def known(ty):
@@ -106,7 +109,7 @@ def main() -> None:
         if isinstance(typ, BaseType):
             if typ.name == BaseTy.Device:
                 return (
-                    [f"int32_t {name}", f"int32_t {name}_index_"],
+                    [f"KoharuTorchDeviceType {name}", f"int32_t {name}_index_"],
                     f"c10::Device(static_cast<c10::DeviceType>({name}), static_cast<c10::DeviceIndex>({name}_index_))",
                 )
             c, _, expr = known(typ.name)
@@ -116,7 +119,7 @@ def main() -> None:
             if isinstance(elem, BaseType):
                 if elem.name == BaseTy.Device:
                     return (
-                        [f"int32_t* {name}", f"int32_t {name}_index_"],
+                        [f"KoharuTorchDeviceType* {name}", f"int32_t {name}_index_"],
                         f"pointer_to_optional_device({name}, {name}_index_)",
                     )
                 if elem.name == BaseTy.Scalar:
@@ -148,7 +151,7 @@ def main() -> None:
             if elem.name == BaseTy.bool:
                 if typ.size is None:
                     raise NotImplementedError(f"{typ}")
-                return params("const int32_t*"), f"pointer_to_list<{typ.size}>({name})"
+                return params("const KoharuTorchBool*"), f"pointer_to_list<{typ.size}>({name})"
             c, aten, _ = known(elem.name)
             pointer = "const char* const*" if elem.name == BaseTy.str else f"const {c}*"
             return params(pointer), f"pointer_to_list<{aten}>({name}, {name}_len_)"

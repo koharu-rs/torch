@@ -35,6 +35,18 @@ struct DLManagedTensorVersioned;
 
 KOHARU_TORCH_API void koharu_torch_free(void* array);
 
+// --- Bools and libtorch's enums ---------------------------------------------
+// The generated functions pass a bool as int32_t, as libtorch's own generated
+// C shim does, and an enum as its c10 value, the code aoti_torch_dtype_*()
+// and kin return. These names say which a value is.
+
+typedef int32_t KoharuTorchBool;          // 0 or 1
+typedef int32_t KoharuTorchDtype;         // c10::ScalarType
+typedef int32_t KoharuTorchLayout;        // c10::Layout
+typedef int32_t KoharuTorchMemoryFormat;  // c10::MemoryFormat
+typedef int32_t KoharuTorchQScheme;       // c10::QScheme
+typedef int32_t KoharuTorchDeviceType;    // c10::DeviceType
+
 // --- Scalars ----------------------------------------------------------------
 
 typedef enum KoharuTorchScalarType {
@@ -109,13 +121,13 @@ KOHARU_TORCH_API AOTITorchError koharu_torch_manual_seed(uint64_t seed);
 
 // A new generator for the device, as torch.Generator(device) makes.
 KOHARU_TORCH_API AOTITorchError koharu_torch_create_generator(
-    int32_t device_type,
+    KoharuTorchDeviceType device_type,
     int32_t device_index,
     AtenGeneratorHandle* ret);
 
 // The device's default generator, the one operators use without one.
 KOHARU_TORCH_API AOTITorchError koharu_torch_default_generator(
-    int32_t device_type,
+    KoharuTorchDeviceType device_type,
     int32_t device_index,
     AtenGeneratorHandle* ret);
 
@@ -138,10 +150,10 @@ KOHARU_TORCH_API AOTITorchError koharu_torch_generator_set_state(
 // The device libtorch was built for: CUDA (which a HIP build also reports),
 // MPS or XPU, as torch.accelerator sees it.
 
-// device_type is an aoti_torch_device_type_*() code, -1 when there's no
-// accelerator, and then device_count is 0.
-KOHARU_TORCH_API AOTITorchError
-koharu_torch_accelerator(int32_t* device_type, int32_t* device_count);
+// device_type is -1 when there's no accelerator, and then device_count is 0.
+KOHARU_TORCH_API AOTITorchError koharu_torch_accelerator(
+    KoharuTorchDeviceType* device_type,
+    int32_t* device_count);
 KOHARU_TORCH_API AOTITorchError koharu_torch_set_device(int32_t device_index);
 KOHARU_TORCH_API AOTITorchError koharu_torch_synchronize(int32_t device_index);
 
@@ -197,7 +209,7 @@ KOHARU_TORCH_API AOTITorchError koharu_torch_empty_host_cache(void);
 typedef struct KoharuTorchStream {
   int64_t id;
   int32_t device_index;
-  int32_t device_type;
+  KoharuTorchDeviceType device_type;
 } KoharuTorchStream;
 
 KOHARU_TORCH_API AOTITorchError
@@ -207,7 +219,7 @@ koharu_torch_set_current_stream(KoharuTorchStream stream);
 
 // A stream from the device's pool, as torch.Stream(device) takes.
 KOHARU_TORCH_API AOTITorchError koharu_torch_stream_from_pool(
-    int32_t device_type,
+    KoharuTorchDeviceType device_type,
     int32_t device_index,
     bool high_priority,
     KoharuTorchStream* ret);
@@ -223,7 +235,7 @@ typedef struct KoharuTorchEventOpaque* KoharuTorchEventHandle;
 
 // A c10::Event. Only one with timing measures elapsed time.
 KOHARU_TORCH_API AOTITorchError koharu_torch_create_event(
-    int32_t device_type,
+    KoharuTorchDeviceType device_type,
     bool enable_timing,
     KoharuTorchEventHandle* ret);
 KOHARU_TORCH_API AOTITorchError
@@ -290,16 +302,17 @@ koharu_torch_graph_pool(KoharuTorchGraphHandle graph, KoharuTorchMempoolId* ret)
 // --- Autocast ---------------------------------------------------------------
 // at::autocast, per device type, on the calling thread.
 
+KOHARU_TORCH_API AOTITorchError koharu_torch_set_autocast_enabled(
+    KoharuTorchDeviceType device_type,
+    bool enabled);
 KOHARU_TORCH_API AOTITorchError
-koharu_torch_set_autocast_enabled(int32_t device_type, bool enabled);
-KOHARU_TORCH_API AOTITorchError
-koharu_torch_autocast_enabled(int32_t device_type, bool* ret);
-
-// dtype is an aoti_torch_dtype_*() code.
-KOHARU_TORCH_API AOTITorchError
-koharu_torch_set_autocast_dtype(int32_t device_type, int32_t dtype);
-KOHARU_TORCH_API AOTITorchError
-koharu_torch_autocast_dtype(int32_t device_type, int32_t* ret);
+koharu_torch_autocast_enabled(KoharuTorchDeviceType device_type, bool* ret);
+KOHARU_TORCH_API AOTITorchError koharu_torch_set_autocast_dtype(
+    KoharuTorchDeviceType device_type,
+    KoharuTorchDtype dtype);
+KOHARU_TORCH_API AOTITorchError koharu_torch_autocast_dtype(
+    KoharuTorchDeviceType device_type,
+    KoharuTorchDtype* ret);
 KOHARU_TORCH_API AOTITorchError
 koharu_torch_set_autocast_cache_enabled(bool enabled);
 KOHARU_TORCH_API AOTITorchError koharu_torch_autocast_cache_enabled(bool* ret);
