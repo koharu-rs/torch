@@ -1,6 +1,6 @@
 # Builds the koharu-torch shim for every platform and backend against the
 # newest libtorch release of the PyTorch version a tag names, such as
-# 2.15.0+koharu.0.84.0.alpha.1 for the Koharu version it ships with.
+# 2.15.0+koharu.1, whose last number counts shim builds of that version.
 name: Shim
 
 on:
@@ -29,8 +29,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! $TAG =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+koharu\.[0-9A-Za-z.-]+$ ]]; then
-            echo "::error::$TAG isn't <PyTorch version>+koharu.<Koharu version>"
+          if [[ ! $TAG =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+koharu\.[0-9]+$ ]]; then
+            echo "::error::$TAG isn't <PyTorch version>+koharu.<build>"
             exit 1
           fi
           version=${BASH_REMATCH[1]}
