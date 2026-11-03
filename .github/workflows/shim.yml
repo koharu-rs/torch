@@ -119,13 +119,15 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+        # A relative path, since Git Bash's GNU tar reads the drive letter
+        # in Windows' $RUNNER_TEMP as a remote host.
         run: |
-          gh release download "$LIBTORCH" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP" \
+          gh release download "$LIBTORCH" --repo "$GITHUB_REPOSITORY" --dir downloads \
             --pattern "$TARGET_TRIPLE-$BACKEND.tar.gz" \
             --pattern "$TARGET_TRIPLE-$BACKEND-dev.tar.gz"
           mkdir -p libtorch/lib
-          tar -xzf "$RUNNER_TEMP/$TARGET_TRIPLE-$BACKEND.tar.gz" -C libtorch/lib
-          tar -xzf "$RUNNER_TEMP/$TARGET_TRIPLE-$BACKEND-dev.tar.gz" -C libtorch
+          tar -xzf "downloads/$TARGET_TRIPLE-$BACKEND.tar.gz" -C libtorch/lib
+          tar -xzf "downloads/$TARGET_TRIPLE-$BACKEND-dev.tar.gz" -C libtorch
 
       - name: Build the shim
         shell: bash
