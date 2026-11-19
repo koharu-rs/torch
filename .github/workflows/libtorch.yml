@@ -399,6 +399,15 @@ jobs:
             (( jobs < 1 )) && jobs=1
             parallel_args+=(--parallel "$jobs")
           fi
+          # On Windows, PyTorch unpacks AOTriton's kernels with tar's --options,
+          # which only Windows' own tar, bsdtar, has; Git Bash's GNU tar comes
+          # first on PATH.
+          if [[ "$RUNNER_OS" == Windows && "$BACKEND" == hip ]]; then
+            bsdtar="$(cygpath -u "$RUNNER_TEMP")/bsdtar"
+            mkdir -p "$bsdtar"
+            cp /c/Windows/System32/tar.exe "$bsdtar/"
+            PATH="$bsdtar:$PATH"
+          fi
           cmake --build build --target install --config Release "${parallel_args[@]}"
 
       - name: Package Torch
