@@ -290,6 +290,9 @@ jobs:
                   -DCMAKE_C_COMPILER=clang-cl.exe
                   -DCMAKE_CXX_COMPILER=clang-cl.exe
                 )
+                # AOTriton's own builds, xz and then its runtime, configure
+                # during the build and take their compiler from the environment.
+                printf 'CC=clang-cl.exe\nCXX=clang-cl.exe\n' >> "$GITHUB_ENV"
               fi
               ;;
             metal)
