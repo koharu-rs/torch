@@ -282,6 +282,8 @@ jobs:
                 -DUSE_ROCM=ON
                 -DUSE_MPS=OFF
                 -DUSE_NVRTC=OFF
+                -DUSE_FLASH_ATTENTION=ON
+                -DUSE_MEM_EFF_ATTENTION=ON
               )
               if [[ "$RUNNER_OS" == Windows ]]; then
                 platform_args=(
@@ -429,6 +431,18 @@ jobs:
 
           if [[ "$BACKEND" == cuda || "$BACKEND" == hip ]]; then
             cp "install/lib/${prefix}caffe2_nvrtc.$extension" package/
+          fi
+          # AOTriton, libtorch's fused attention on AMD GPUs, reads its kernels
+          # from aotriton.images beside its own library. PyTorch installs only
+          # the Linux library; on Windows it stays where AOTriton built it,
+          # with the dlfcn-win32 and liblzma it loads.
+          if [[ "$BACKEND" == hip ]]; then
+            if [[ "$RUNNER_OS" == Windows ]]; then
+              cp upstream/pytorch/torch/lib/{aotriton_v2,dl,liblzma}.dll package/
+            else
+              cp install/lib/libaotriton_v2.so* package/
+            fi
+            cp -r install/lib/aotriton.images package/
           fi
           tar -C package -czf "$TARGET_TRIPLE-$BACKEND.tar.gz" .
 
