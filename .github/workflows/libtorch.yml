@@ -116,6 +116,12 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'on');
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            // CMake reads these in every project it configures, so the
+            // projects PyTorch's build configures itself, such as AOTriton's
+            // runtime on Windows, compile through sccache too.
+            for (const language of ['C', 'CXX', 'CUDA', 'HIP']) {
+              core.exportVariable(`CMAKE_${language}_COMPILER_LAUNCHER`, 'sccache');
+            }
 
       - name: Enable Visual Studio 2022 toolset
         if: runner.os == 'Windows'
@@ -340,10 +346,6 @@ jobs:
           cmake -S upstream/pytorch -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/install" \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CUDA_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_HIP_COMPILER_LAUNCHER=sccache \
             -DBLAS=Eigen \
             -DBUILD_BINARY=OFF \
             -DBUILD_FUNCTORCH=OFF \
