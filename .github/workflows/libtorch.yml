@@ -277,24 +277,12 @@ jobs:
               )
               ;;
             hip)
-              # PyTorch's kernels build for one LLVM generic target per RDNA
-              # family, covering that family's chips in PYTORCH_ROCM_ARCH; the
-              # Instinct chips, which PyTorch's kernels name directly, keep
-              # their own. AOTriton, which PyTorch builds and downloads for the
-              # chips in PYTORCH_ROCM_ARCH, ships kernels per chip only, so
-              # that list stays and LoadHIP.cmake stops copying it into
-              # CMAKE_HIP_ARCHITECTURES.
               if [[ "$RUNNER_OS" == Linux ]]; then
                 export PYTORCH_ROCM_ARCH='gfx908;gfx90a;gfx942;gfx950;gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1033;gfx1034;gfx1035;gfx1036;gfx1100;gfx1101;gfx1102;gfx1150;gfx1151;gfx1152;gfx1200;gfx1201'
-                hip_architectures='gfx908;gfx90a;gfx942;gfx950;gfx10-1-generic;gfx10-3-generic;gfx11-generic;gfx12-generic'
               else
                 export PYTORCH_ROCM_ARCH='gfx1010;gfx1011;gfx1012;gfx1030;gfx1031;gfx1032;gfx1033;gfx1034;gfx1035;gfx1036;gfx1100;gfx1101;gfx1102;gfx1103;gfx1150;gfx1151;gfx1152;gfx1153;gfx1200;gfx1201'
-                hip_architectures='gfx10-1-generic;gfx10-3-generic;gfx11-generic;gfx12-generic'
               fi
               printf 'PYTORCH_ROCM_ARCH=%s\n' "$PYTORCH_ROCM_ARCH" >> "$GITHUB_ENV"
-              load_hip=upstream/pytorch/cmake/public/LoadHIP.cmake
-              grep -qF 'set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})' "$load_hip"
-              sed -i "s|set(CMAKE_HIP_ARCHITECTURES \${PYTORCH_ROCM_ARCH})|set(CMAKE_HIP_ARCHITECTURES \"$hip_architectures\")|" "$load_hip"
               backend_args=(
                 -DUSE_CUDA=OFF
                 -DUSE_ROCM=ON
@@ -302,10 +290,6 @@ jobs:
                 -DUSE_NVRTC=OFF
                 -DUSE_FLASH_ATTENTION=ON
                 -DUSE_MEM_EFF_ATTENTION=ON
-                # Clang compiles each file's targets two at a time rather than
-                # one after another, shortening the few largest files that end
-                # the build; more at once would multiply the build's memory.
-                -DCMAKE_HIP_FLAGS=--offload-jobs=2
               )
               if [[ "$RUNNER_OS" == Windows ]]; then
                 platform_args=(
