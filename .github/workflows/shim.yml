@@ -50,19 +50,21 @@ jobs:
     name: ${{ matrix.backend }} / ${{ matrix.target }}
     strategy:
       fail-fast: true
+      # Linux builds run on the oldest Ubuntu Koharu supports, since a library
+      # needs the glibc it was linked against or a newer one.
       matrix:
         include:
           - backend: cpu
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - backend: cpu
-            os: ubuntu-latest
+            os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - backend: cuda
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - backend: cuda
-            os: ubuntu-latest
+            os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - backend: cuda
             os: ubuntu-24.04-arm
@@ -71,7 +73,7 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
           - backend: hip
-            os: ubuntu-latest
+            os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
           - backend: metal
             os: macos-latest
